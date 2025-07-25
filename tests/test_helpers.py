@@ -172,9 +172,13 @@ class TestConfigValidation:
     def test_config_invalid_json(self):
         """Test config loading with invalid JSON."""
         try:
-            from misc.config import Config
+            from misc.config import Config, Singleton
             import tempfile
             import os
+            
+            # Clear singleton cache to ensure fresh instance
+            if Config in Singleton._instances:
+                del Singleton._instances[Config]
             
             # Create invalid JSON file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -185,10 +189,16 @@ class TestConfigValidation:
                 # Should handle invalid JSON gracefully
                 with pytest.raises(Exception):
                     config = Config(configfile=config_file)
+                    # The exception only occurs when we try to access cfg property
+                    # which triggers the actual JSON loading
+                    _ = config.cfg
                     
             finally:
                 # Cleanup
                 os.unlink(config_file)
+                # Clear singleton cache again for clean state
+                if Config in Singleton._instances:
+                    del Singleton._instances[Config]
                 
         except ImportError:
             pytest.skip("Config module not available")
