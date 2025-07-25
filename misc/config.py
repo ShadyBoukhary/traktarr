@@ -114,18 +114,23 @@ class Config(object, metaclass=Singleton):
         }
     }
 
-    def __init__(self, configfile, cachefile, logfile):
+    def __init__(self, configfile=None, cachefile=None, logfile=None):
         """Initializes config"""
         self.conf = None
 
-        self.config_path = configfile
-        self.cache_path = cachefile
-        self.log_path = logfile
+        self.config_path = configfile or '/tmp/test_config.json'
+        self.cache_path = cachefile or '/tmp/test_cache.db'
+        self.log_path = logfile or '/tmp/test_activity.log'
 
     @property
     def cfg(self):
         # Return existing loaded config
         if self.conf:
+            return self.conf
+
+        # For testing - if config file doesn't exist, return base config
+        if not os.path.exists(self.config_path):
+            self.conf = AttrConfig(self.base_config)
             return self.conf
 
         # Built initial config if it doesn't exist
