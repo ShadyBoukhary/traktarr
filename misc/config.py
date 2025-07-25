@@ -42,14 +42,20 @@ class Config(object, metaclass=Singleton):
         },
         'automatic': {
             'movies': {
-                'interval': 20,
+                'intervals': {
+                    'public_lists': 20,
+                    'user_lists': 6
+                },
                 'anticipated': 3,
                 'trending': 3,
                 'popular': 3,
                 'boxoffice': 10
             },
             'shows': {
-                'interval': 48,
+                'intervals': {
+                    'public_lists': 48,
+                    'user_lists': 12
+                },
                 'anticipated': 10,
                 'trending': 1,
                 'popular': 1

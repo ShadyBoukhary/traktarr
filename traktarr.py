@@ -1248,8 +1248,85 @@ def automatic_movies(
     )
 
 
+def automatic_shows_public_lists(
+        add_delay=2.5,
+        sort='votes',
+        no_search=False,
+        notifications=False,
+        ignore_blacklist=False,
+):
+    return _automatic_media(
+        'shows',
+        list_filter='public_lists',
+        add_delay=add_delay,
+        sort=sort,
+        no_search=no_search,
+        notifications=notifications,
+        ignore_blacklist=ignore_blacklist
+    )
+
+
+def automatic_movies_public_lists(
+        add_delay=2.5,
+        sort='votes',
+        no_search=False,
+        notifications=False,
+        ignore_blacklist=False,
+        rotten_tomatoes=None,
+):
+    return _automatic_media(
+        'movies',
+        list_filter='public_lists',
+        add_delay=add_delay,
+        sort=sort,
+        no_search=no_search,
+        notifications=notifications,
+        ignore_blacklist=ignore_blacklist,
+        rotten_tomatoes=rotten_tomatoes
+    )
+
+
+def automatic_shows_user_lists(
+        add_delay=2.5,
+        sort='votes',
+        no_search=False,
+        notifications=False,
+        ignore_blacklist=False,
+):
+    return _automatic_media(
+        'shows',
+        list_filter='user_lists',
+        add_delay=add_delay,
+        sort=sort,
+        no_search=no_search,
+        notifications=notifications,
+        ignore_blacklist=ignore_blacklist
+    )
+
+
+def automatic_movies_user_lists(
+        add_delay=2.5,
+        sort='votes',
+        no_search=False,
+        notifications=False,
+        ignore_blacklist=False,
+        rotten_tomatoes=None,
+):
+    return _automatic_media(
+        'movies',
+        list_filter='user_lists',
+        add_delay=add_delay,
+        sort=sort,
+        no_search=no_search,
+        notifications=notifications,
+        ignore_blacklist=ignore_blacklist,
+        rotten_tomatoes=rotten_tomatoes
+    )
+
+
 def _automatic_media(
         media_type,
+        list_filter=None,
         add_delay=2.5,
         sort='votes',
         no_search=False,
@@ -1262,6 +1339,7 @@ def _automatic_media(
     
     Args:
         media_type: 'shows' or 'movies'
+        list_filter: 'public_lists', 'user_lists', or None for all lists
         add_delay: Seconds between each add request
         sort: Sort method for lists
         no_search: Disable search when adding
@@ -1303,8 +1381,20 @@ def _automatic_media(
         for list_type, value in automatic_config.items():
             added_items = None
 
-            if list_type.lower() == 'interval':
+            if list_type.lower() in ['interval', 'intervals']:
                 continue
+
+            # Apply list filtering if specified
+            if list_filter == 'public_lists':
+                # Only process public lists (non-user lists)
+                if not (list_type.lower() in Trakt.non_user_lists or (
+                        '_' in list_type and list_type.lower().partition("_")[0] in Trakt.non_user_lists)):
+                    continue
+            elif list_filter == 'user_lists':
+                # Only process user lists (watchlist and custom lists)
+                if list_type.lower() in Trakt.non_user_lists or (
+                        '_' in list_type and list_type.lower().partition("_")[0] in Trakt.non_user_lists):
+                    continue
 
             if list_type.lower() in Trakt.non_user_lists or (
                     '_' in list_type and list_type.lower().partition("_")[0] in Trakt.non_user_lists):
@@ -1460,46 +1550,95 @@ def run(
 
     # send notification
     if not no_notifications and cfg.notifications.verbose:
-        notify.send(message="Automatic mode is now running.")
+        notify.send(message="Automatic mode is now running with separate intervals for public lists and user lists.")
 
     # Add tasks to schedule and do first run if enabled
-    if cfg.automatic.movies.interval and cfg.automatic.movies.interval > 0:
-        movie_schedule = schedule.every(cfg.automatic.movies.interval).hours.do(
-            automatic_movies,
-            add_delay,
-            sort,
-            no_search,
-            not no_notifications,
-            ignore_blacklist,
-            int(cfg.filters.movies.rotten_tomatoes) if cfg.filters.movies.rotten_tomatoes != "" else None,
-        )
-        if run_now:
-            movie_schedule.run()
+    scheduled_tasks = []
 
-            # Sleep between tasks
-            time.sleep(add_delay)
+    # Helper function to get interval configuration
+    def get_interval(media_type, list_type):
+        media_config = getattr(cfg.automatic, media_type)
+        # Use the new intervals configuration
+        if hasattr(media_config, 'intervals') and media_config.intervals:
+            if list_type in media_config.intervals:
+                return media_config.intervals[list_type]
+        return 0  # No interval configured
 
-    if cfg.automatic.shows.interval and cfg.automatic.shows.interval > 0:
-        shows_schedule = schedule.every(cfg.automatic.shows.interval).hours.do(
-            automatic_shows,
-            add_delay,
-            sort,
-            no_search,
-            not no_notifications,
-            ignore_blacklist
-        )
-        if run_now:
-            shows_schedule.run()
+    # Helper function to schedule a task
+    def schedule_task(media_type, list_type, interval, func):
+        if interval and interval > 0:
+            task_name = f"{media_type} {list_type.replace('_', ' ')}"
+            log.info("Scheduled %s every %s hours", task_name, interval)
+            
+            # Build arguments based on media type
+            args = [add_delay, sort, no_search, not no_notifications, ignore_blacklist]
+            if media_type == 'movies':
+                args.append(int(cfg.filters.movies.rotten_tomatoes) if cfg.filters.movies.rotten_tomatoes != "" else None)
+            
+            # Create and store the scheduled task
+            task = schedule.every(interval).hours.do(func, *args)
+            task.tag = task_name  # Add a tag for identification
+            scheduled_tasks.append(task)
+            
+            if run_now:
+                log.info("Running %s immediately", task_name)
+                task.run()
+                time.sleep(add_delay)
+            
+            return task
+        return None
 
-            # Sleep between tasks
-            time.sleep(add_delay)
+    # Schedule all tasks
+    schedule_task('movies', 'public_lists', get_interval('movies', 'public_lists'), automatic_movies_public_lists)
+    schedule_task('movies', 'user_lists', get_interval('movies', 'user_lists'), automatic_movies_user_lists)
+    schedule_task('shows', 'public_lists', get_interval('shows', 'public_lists'), automatic_shows_public_lists)
+    schedule_task('shows', 'user_lists', get_interval('shows', 'user_lists'), automatic_shows_user_lists)
+
+    # Log if no tasks were scheduled
+    if not scheduled_tasks:
+        log.warning("No automatic tasks scheduled! Check your intervals configuration.")
+    else:
+        log.info("Successfully scheduled %d automatic tasks", len(scheduled_tasks))
+        log.info("Initial schedule:")
+        for task in scheduled_tasks:
+            task_name = getattr(task, 'tag', 'Unknown task')
+            next_run = task.next_run
+            if next_run:
+                log.info("  - %s: next run at %s", task_name, next_run.strftime('%Y-%m-%d %H:%M:%S'))
 
     # Enter running schedule
+    last_schedule_log = 0
+    schedule_log_interval = 3600  # Log schedule every hour
+    
     while True:
         try:
+            current_time = time.time()
+            
+            # Log next run time for each scheduled task (periodically)
+            if current_time - last_schedule_log >= schedule_log_interval:
+                if scheduled_tasks:
+                    log.info("Current schedule status:")
+                    for task in scheduled_tasks:
+                        task_name = getattr(task, 'tag', 'Unknown task')
+                        next_run = task.next_run
+                        if next_run:
+                            log.info("  - %s: next run at %s", task_name, next_run.strftime('%Y-%m-%d %H:%M:%S'))
+                        else:
+                            log.info("  - %s: no next run scheduled", task_name)
+                else:
+                    log.info("No tasks scheduled")
+                last_schedule_log = current_time
+            
             # Sleep until next run
-            log.info("Next job at %s", schedule.next_run())
-            time.sleep(max(schedule.idle_seconds(), 0))
+            idle_seconds = schedule.idle_seconds()
+            if idle_seconds > 0:
+                next_run_time = schedule.next_run()
+                if next_run_time:
+                    log.debug("Next job at %s (sleeping %d seconds)", next_run_time.strftime('%Y-%m-%d %H:%M:%S'), idle_seconds)
+                time.sleep(idle_seconds)
+            else:
+                time.sleep(1)  # Brief pause if no idle time
+                
             # Check jobs to run
             schedule.run_pending()
 
