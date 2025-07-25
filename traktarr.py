@@ -159,6 +159,558 @@ def get_exclusions(pvr, pvr_type):
     return objects_list
 
 
+
+def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_roles, authenticate_user, years, countries, languages, genres, runtimes):
+    """
+    Get the appropriate Trakt list based on media type and list type.
+    
+    Args:
+        trakt: Trakt instance
+        media_type: 'shows' or 'movies'
+        list_type: Type of list to retrieve
+        person: Person name for person lists
+        include_non_acting_roles: Include non-acting roles for person lists
+        authenticate_user: User to authenticate for certain lists
+        years: Year filter
+        countries: Country filter
+        languages: Language filter
+        genres: Genre filter
+        runtimes: Runtime filter (movies only)
+    
+    Returns:
+        List of Trakt objects or None if failed
+    """
+    from helpers import misc as misc_helper
+    
+    if media_type == 'shows':
+        if list_type.lower() == 'anticipated':
+            return trakt.get_anticipated_shows(
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+            )
+        elif list_type.lower() == 'trending':
+            return trakt.get_trending_shows(
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+            )
+        elif list_type.lower() == 'popular':
+            return trakt.get_popular_shows(
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+            )
+        elif list_type.lower() == 'person':
+            if not person:
+                log.error("You must specify a person with the '--person' / '-p' parameter when using the 'person' list type!")
+                return None
+            return trakt.get_person_shows(
+                years=years,
+                person=person,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+                include_non_acting_roles=include_non_acting_roles,
+            )
+        elif list_type.lower() == 'recommended':
+            return trakt.get_recommended_shows(
+                authenticate_user,
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+            )
+        elif list_type.lower().startswith('played'):
+            most_type = misc_helper.substring_after(list_type.lower(), "_")
+            return trakt.get_most_played_shows(
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+                most_type=most_type if most_type else None,
+            )
+        elif list_type.lower().startswith('watched'):
+            most_type = misc_helper.substring_after(list_type.lower(), "_")
+            return trakt.get_most_watched_shows(
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+                most_type=most_type if most_type else None,
+            )
+        elif list_type.lower() == 'watchlist':
+            return trakt.get_watchlist_shows(authenticate_user)
+        else:
+            return trakt.get_user_list_shows(list_type, authenticate_user)
+    
+    elif media_type == 'movies':
+        if list_type.lower() == 'anticipated':
+            return trakt.get_anticipated_movies(
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+                runtimes=runtimes,
+            )
+        elif list_type.lower() == 'trending':
+            return trakt.get_trending_movies(
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+                runtimes=runtimes,
+            )
+        elif list_type.lower() == 'popular':
+            return trakt.get_popular_movies(
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+                runtimes=runtimes,
+            )
+        elif list_type.lower() == 'boxoffice':
+            return trakt.get_boxoffice_movies()
+        elif list_type.lower() == 'person':
+            if not person:
+                log.error("You must specify a person with the '--person' / '-p' parameter when using the 'person' list type!")
+                return None
+            return trakt.get_person_movies(
+                years=years,
+                person=person,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+                runtimes=runtimes,
+                include_non_acting_roles=include_non_acting_roles,
+            )
+        elif list_type.lower() == 'recommended':
+            return trakt.get_recommended_movies(
+                authenticate_user,
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+                runtimes=runtimes,
+            )
+        elif list_type.lower().startswith('played'):
+            most_type = misc_helper.substring_after(list_type.lower(), "_")
+            return trakt.get_most_played_movies(
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+                runtimes=runtimes,
+                most_type=most_type if most_type else None,
+            )
+        elif list_type.lower().startswith('watched'):
+            most_type = misc_helper.substring_after(list_type.lower(), "_")
+            return trakt.get_most_watched_movies(
+                years=years,
+                countries=countries,
+                languages=languages,
+                genres=genres,
+                runtimes=runtimes,
+                most_type=most_type if most_type else None,
+            )
+        elif list_type.lower() == 'watchlist':
+            return trakt.get_watchlist_movies(authenticate_user)
+        else:
+            return trakt.get_user_list_movies(list_type, authenticate_user)
+    
+    return None
+
+
+
+
+############################################################
+# Common Media Processing Function
+############################################################
+def _process_media(
+        media_type,
+        list_type,
+        add_limit=0,
+        add_delay=2.5,
+        sort='votes',
+        years=None,
+        genres=None,
+        folder=None,
+        person=None,
+        include_non_acting_roles=False,
+        no_search=False,
+        notifications=False,
+        authenticate_user=None,
+        ignore_blacklist=False,
+        remove_rejected_from_recommended=False,
+        dry_run=False,
+        rotten_tomatoes=None,
+        minimum_availability=None,
+):
+    """
+    Common function for processing both shows and movies from Trakt lists.
+    
+    Args:
+        media_type: 'shows' or 'movies'
+        list_type: Type of Trakt list to process
+        add_limit: Maximum number of items to add
+        add_delay: Seconds between each add request
+        sort: Sort method for lists
+        years: Year filter
+        genres: Genre filter
+        folder: Root folder override
+        person: Person name for person lists
+        include_non_acting_roles: Include non-acting roles for person lists
+        no_search: Disable search when adding
+        notifications: Send notifications
+        authenticate_user: User to authenticate for certain lists
+        ignore_blacklist: Ignore blacklist filters
+        remove_rejected_from_recommended: Remove rejected items from recommended list
+        dry_run: Show what would be added without adding
+        rotten_tomatoes: Minimum RT score (movies only)
+        minimum_availability: Minimum availability (movies only)
+    
+    Returns:
+        Number of items added
+    """
+    import time
+    from helpers import misc as misc_helper
+    from helpers import parameter as parameter_helper
+    from helpers import omdb as omdb_helper
+    from helpers import tmdb as tmdb_helper
+    from helpers import trakt as trakt_helper
+    
+    # Configure based on media type
+    if media_type == 'shows':
+        from media.sonarr import Sonarr
+        from helpers import sonarr as pvr_helper
+        
+        pvr_class = Sonarr
+        pvr_config = cfg.sonarr
+        pvr_name = 'Sonarr'
+        config_key = 'shows'
+        filters_config = cfg.filters.shows
+        media_key = 'show'
+        media_name = 'show'
+        media_plural = 'shows'
+        add_func_name = 'add_show'
+        event_name = 'add_show'
+        validate_func = tmdb_helper.check_show_tmdb_id if hasattr(tmdb_helper, 'check_show_tmdb_id') else None
+    elif media_type == 'movies':
+        from media.radarr import Radarr
+        from helpers import radarr as pvr_helper
+        
+        pvr_class = Radarr
+        pvr_config = cfg.radarr
+        pvr_name = 'Radarr'
+        config_key = 'movies'
+        filters_config = cfg.filters.movies
+        media_key = 'movie'
+        media_name = 'movie'
+        media_plural = 'movies'
+        add_func_name = 'add_movie'
+        event_name = 'add_movie'
+        validate_func = tmdb_helper.check_movie_tmdb_id
+    else:
+        raise ValueError(f"Invalid media_type: {media_type}. Must be 'shows' or 'movies'")
+    
+    from media.trakt import Trakt
+    
+    added_count = 0
+
+    # Process countries
+    if not getattr(filters_config, 'allowed_countries', None) or 'ignore' in getattr(filters_config, 'allowed_countries', []):
+        countries = None
+    else:
+        countries = filters_config.allowed_countries
+
+    # Process languages
+    if not getattr(filters_config, 'allowed_languages', None) or 'ignore' in getattr(filters_config, 'allowed_languages', []):
+        languages = None
+    else:
+        languages = filters_config.allowed_languages
+
+    # Process genres
+    if genres:
+        # Split comma separated list
+        genres = sorted(genres.split(','), key=str.lower)
+
+        # Look for special keyword 'ignore'
+        if 'ignore' in genres:
+            # Set special keyword 'ignore' to media's blacklisted_genres list
+            cfg['filters'][config_key]['blacklisted_genres'] = ['ignore']
+            # Set genre search parameter to None
+            genres = None
+        else:
+            # Remove genre from media's blacklisted_genres list, if it's there
+            misc_helper.unblacklist_genres(genres, cfg['filters'][config_key]['blacklisted_genres'])
+            log.debug("Filter Trakt results with genre(s): %s", ', '.join(map(lambda x: x.title(), genres)))
+
+    # Process years parameter
+    years, new_min_year, new_max_year = parameter_helper.years(
+        years,
+        getattr(filters_config, 'blacklisted_min_year', None),
+        getattr(filters_config, 'blacklisted_max_year', None),
+    )
+
+    cfg['filters'][config_key]['blacklisted_min_year'] = new_min_year
+    cfg['filters'][config_key]['blacklisted_max_year'] = new_max_year
+
+    # Runtime range (movies only)
+    runtimes = None
+    if media_type == 'movies':
+        if getattr(filters_config, 'blacklisted_min_runtime', None):
+            min_runtime = filters_config.blacklisted_min_runtime
+        else:
+            min_runtime = 0
+
+        if getattr(filters_config, 'blacklisted_max_runtime', None) and filters_config.blacklisted_max_runtime >= min_runtime:
+            max_runtime = filters_config.blacklisted_max_runtime
+        else:
+            max_runtime = 9999
+
+        if min_runtime == 0 and max_runtime == 9999:
+            runtimes = None
+        else:
+            runtimes = str(min_runtime) + '-' + str(max_runtime)
+
+    # Replace root_folder if folder is supplied
+    if folder:
+        cfg[config_key]['root_folder'] = folder
+    log.debug('Set root folder to: \'%s\'', pvr_config.root_folder)
+
+    # Movies-specific: replace minimum_availability if supplied
+    if media_type == 'movies' and minimum_availability:
+        valid_min_avail = ['announced', 'in_cinemas', 'released']
+        if minimum_availability:
+            cfg['radarr']['minimum_availability'] = minimum_availability
+        elif cfg['radarr']['minimum_availability'] not in valid_min_avail:
+            cfg['radarr']['minimum_availability'] = 'released'
+        log.debug('Set minimum availability to: \'%s\'', cfg['radarr']['minimum_availability'])
+
+    # Validate trakt api_key
+    trakt = Trakt(cfg)
+    pvr = pvr_class(pvr_config.url, pvr_config.api_key)
+
+    validate_trakt(trakt, notifications)
+    validate_pvr(pvr, pvr_name, notifications)
+
+    # Quality profile id
+    quality_profile_id = get_quality_profile_id(pvr, getattr(pvr_config, 'quality', None))
+
+    pvr_objects_list = get_objects(pvr, pvr_name, notifications)
+    
+    # Get exclusions list (only for movies, Sonarr doesn't support exclusions)
+    if media_type == 'movies':
+        pvr_exclusions_list = get_exclusions(pvr, pvr_name)
+    else:
+        pvr_exclusions_list = None
+
+    # Get trakt list
+    trakt_objects_list = _get_trakt_list(
+        trakt, media_type, list_type, person, include_non_acting_roles, 
+        authenticate_user, years, countries, languages, genres, runtimes
+    )
+
+    if not trakt_objects_list:
+        log.error("Aborting due to failure to retrieve Trakt '%s' %s list.", list_type.capitalize(), media_plural)
+        if notifications:
+            callback_notify({
+                'event': 'abort', 
+                'type': media_plural, 
+                'list_type': list_type,
+                'reason': f"Failure to retrieve Trakt '{list_type.capitalize()}' {media_plural} list."
+            })
+        return None
+    else:
+        log.info("Retrieved Trakt '%s' %s list, %s found: %d", list_type.capitalize(), media_plural, media_plural, len(trakt_objects_list))
+
+    # Set remove_rejected_recommended to False if this is not the recommended list
+    if list_type.lower() != 'recommended':
+        remove_rejected_from_recommended = False
+
+    # Build filtered list without items that exist in PVR
+    if media_type == 'shows':
+        # Shows only support removing existing items, not exclusions
+        processed_list = pvr_helper.remove_existing_series_from_trakt_list(
+            pvr_objects_list,
+            trakt_objects_list,
+            callback_remove_recommended if remove_rejected_from_recommended else None
+        )
+        removal_successful = processed_list is not None
+    else:  # movies
+        # Movies support both existing and excluded items
+        processed_list, removal_successful = pvr_helper.remove_existing_and_excluded_movies_from_trakt_list(
+            pvr_objects_list,
+            pvr_exclusions_list,
+            trakt_objects_list,
+            callback_remove_recommended if remove_rejected_from_recommended else None
+        )
+
+    if processed_list is None:
+        if not removal_successful:
+            log.error("Aborting due to failure to remove existing %s %s from retrieved Trakt %s list.", pvr_name, media_plural, media_plural)
+            if notifications:
+                callback_notify({
+                    'event': 'abort', 
+                    'type': media_plural, 
+                    'list_type': list_type,
+                    'reason': f"Failure to remove existing {pvr_name} {media_plural} from retrieved Trakt '{list_type.capitalize()}' {media_plural} list."
+                })
+        else:
+            log.info("No more %s left to process in '%s' %s list.", media_plural, list_type.capitalize(), media_plural)
+        return None
+    else:
+        if media_type == 'movies':
+            log.info("Removed existing and excluded %s %s from Trakt %s list. %s left to process: %d", 
+                    pvr_name, media_plural, media_plural, media_plural.capitalize(), len(processed_list))
+        else:
+            log.info("Removed existing %s %s from Trakt %s list. %s left to process: %d", 
+                    pvr_name, media_plural, media_plural, media_plural.capitalize(), len(processed_list))
+
+    # Sort filtered list
+    if sort == 'release':
+        sorted_list = misc_helper.sorted_list(processed_list, media_key, 'released')
+        log.info("Sorted %s list to process by recent 'release' date.", media_plural)
+    elif sort == 'rating':
+        sorted_list = misc_helper.sorted_list(processed_list, media_key, 'rating')
+        log.info("Sorted %s list to process by highest 'rating'.", media_plural)
+    else:
+        sorted_list = misc_helper.sorted_list(processed_list, media_key, 'votes')
+        log.info("Sorted %s list to process by highest 'votes'.", media_plural)
+
+    # Display specified min RT score (movies only)
+    if media_type == 'movies' and rotten_tomatoes is not None:
+        if cfg.omdb.api_key:
+            log.info("Minimum Rotten Tomatoes score of %d%% requested.", rotten_tomatoes)
+        else:
+            log.info("Skipping minimum Rotten Tomatoes score check as OMDb API Key is missing.")
+
+    # Process the list
+    log.info("Processing list now...")
+    for sorted_item in sorted_list:
+        # noinspection PyBroadException
+
+        # Set common variables
+        item_title = sorted_item[media_key]['title']
+        item_tmdb_id = sorted_item[media_key]['ids']['tmdb']
+        item_imdb_id = sorted_item[media_key]['ids']['imdb']
+
+        # Convert year to string
+        item_year = str(sorted_item[media_key]['year']) if sorted_item[media_key]['year'] else '????'
+
+        # Build list of genres
+        item_genres = (', '.join(sorted_item[media_key]['genres'])).title() if sorted_item[media_key]['genres'] else 'N/A'
+
+        try:
+            # Check if item has a valid TMDb ID and that it exists on TMDb
+            if validate_func and not validate_func(item_title, item_year, item_tmdb_id):
+                continue
+
+            # Check if genres matches genre(s) supplied via argument
+            if genres and not misc_helper.allowed_genres(genres, media_key, sorted_item):
+                log.debug("SKIPPING: '%s (%s)' because it was not from the genre(s): %s", 
+                         item_title, item_year, ', '.join(map(lambda x: x.title(), genres)))
+                continue
+
+            # Check if item passes blacklist criteria inspection
+            if media_type == 'shows':
+                is_blacklisted = trakt_helper.is_show_blacklisted(
+                    sorted_item,
+                    filters_config,
+                    ignore_blacklist,
+                    callback_remove_recommended if remove_rejected_from_recommended else None,
+                )
+            else:  # movies
+                is_blacklisted = trakt_helper.is_movie_blacklisted(
+                    sorted_item,
+                    filters_config,
+                    ignore_blacklist,
+                    callback_remove_recommended if remove_rejected_from_recommended else None,
+                )
+
+            if not is_blacklisted:
+                # Skip movie if below user specified min RT score (movies only)
+                if media_type == 'movies' and rotten_tomatoes is not None and cfg.omdb.api_key:
+                    if not omdb_helper.does_movie_have_min_req_rt_score(
+                            cfg.omdb.api_key,
+                            item_title,
+                            item_year,
+                            item_imdb_id,
+                            rotten_tomatoes,
+                    ):
+                        continue
+
+                log.info("ADDING: '%s (%s)' | Country: %s | Language: %s | Genre(s): %s ",
+                         item_title,
+                         item_year,
+                         (sorted_item[media_key]['country'] or 'N/A').upper(),
+                         (sorted_item[media_key]['language'] or 'N/A').upper(),
+                         item_genres,
+                         )
+
+                if dry_run:
+                    log.info("dry-run: SKIPPING")
+                else:
+                    # Add item to PVR
+                    if media_type == 'shows':
+                        add_result = pvr.add_show(
+                            sorted_item[media_key]['ids']['tmdb'],
+                            item_title,
+                            sorted_item[media_key]['ids']['slug'],
+                            quality_profile_id,
+                            cfg.sonarr.root_folder,
+                            not no_search,
+                        )
+                    else:  # movies
+                        add_result = pvr.add_movie(
+                            sorted_item[media_key]['ids']['tmdb'],
+                            item_title,
+                            item_year,
+                            sorted_item[media_key]['ids']['slug'],
+                            quality_profile_id,
+                            cfg.radarr.root_folder,
+                            cfg.radarr.minimum_availability,
+                            not no_search,
+                        )
+
+                    if add_result:
+                        log.info("ADDED: '%s (%s)'", item_title, item_year)
+                        if notifications:
+                            callback_notify({
+                                'event': event_name, 
+                                'list_type': list_type, 
+                                media_key: sorted_item[media_key]
+                            })
+                        added_count += 1
+                    else:
+                        log.error("FAILED ADDING: '%s (%s)'", item_title, item_year)
+                        continue
+            else:
+                log.info("SKIPPED: '%s (%s)'", item_title, item_year)
+                continue
+
+            # Stop adding items, if added_count >= add_limit
+            if add_limit and added_count >= add_limit:
+                break
+
+            # Sleep before adding any more
+            time.sleep(add_delay)
+
+        except Exception:
+            log.exception("Exception while processing %s '%s': ", media_name, item_title)
+
+    log.info("Added %d new %s(s) to %s", added_count, media_name, pvr_name)
+
+    # Send notification
+    if notifications and (cfg.notifications.verbose or added_count > 0):
+        notify.send(message=f"Added {added_count} {media_name}(s) from Trakt's '{list_type.capitalize()}' list")
+
+    return added_count
+
+
 ############################################################
 # SHOWS
 ############################################################
@@ -365,341 +917,24 @@ def shows(
         remove_rejected_from_recommended=False,
         dry_run=False,
 ):
-
-    from media.sonarr import Sonarr
-    from media.trakt import Trakt
-    from helpers import str as misc_str
-    from helpers import misc as misc_helper
-    from helpers import sonarr as sonarr_helper
-    from helpers import trakt as trakt_helper
-    from helpers import tvdb as tvdb_helper
-    from helpers import parameter as parameter_helper
-
-    added_shows = 0
-
-    # process countries
-    if not cfg.filters.shows.allowed_countries or 'ignore' in cfg.filters.shows.allowed_countries:
-        countries = None
-    else:
-        countries = cfg.filters.shows.allowed_countries
-
-    # process languages
-    if not cfg.filters.shows.allowed_languages or 'ignore' in cfg.filters.shows.allowed_languages:
-        languages = None
-    else:
-        languages = cfg.filters.shows.allowed_languages
-
-    # process genres
-    if genres:
-        # split comma separated list
-        genres = sorted(genres.split(','), key=str.lower)
-
-        # look for special keyword 'ignore'
-        if 'ignore' in genres:
-            # set special genre keyword to show's blacklisted_genres list
-            cfg['filters']['shows']['blacklisted_genres'] = ['ignore']
-            genres = None
-        else:
-            # remove genres from show's blacklisted_genres list
-            misc_helper.unblacklist_genres(genres, cfg['filters']['shows']['blacklisted_genres'])
-            log.debug("Filter Trakt results with genre(s): %s", ', '.join(map(lambda x: x.title(), genres)))
-
-    # process years parameter
-    years, new_min_year, new_max_year = parameter_helper.years(
-        years,
-        cfg.filters.shows.blacklisted_min_year,
-        cfg.filters.shows.blacklisted_max_year,
+    return _process_media(
+        'shows',
+        list_type=list_type,
+        add_limit=add_limit,
+        add_delay=add_delay,
+        sort=sort,
+        years=years,
+        genres=genres,
+        folder=folder,
+        person=person,
+        no_search=no_search,
+        include_non_acting_roles=include_non_acting_roles,
+        notifications=notifications,
+        authenticate_user=authenticate_user,
+        ignore_blacklist=ignore_blacklist,
+        remove_rejected_from_recommended=remove_rejected_from_recommended,
+        dry_run=dry_run,
     )
-
-    cfg['filters']['shows']['blacklisted_min_year'] = new_min_year
-    cfg['filters']['shows']['blacklisted_max_year'] = new_max_year
-
-    # runtimes range
-    if cfg.filters.shows.blacklisted_min_runtime:
-        min_runtime = cfg.filters.shows.blacklisted_min_runtime
-    else:
-        min_runtime = 0
-
-    if cfg.filters.shows.blacklisted_max_runtime and cfg.filters.shows.blacklisted_max_runtime >= min_runtime:
-        max_runtime = cfg.filters.shows.blacklisted_max_runtime
-    else:
-        max_runtime = 9999
-
-    if min_runtime == 0 and max_runtime == 9999:
-        runtimes = None
-    else:
-        runtimes = str(min_runtime) + '-' + str(max_runtime)
-
-    # replace sonarr root_folder if folder is supplied
-    if folder:
-        cfg['sonarr']['root_folder'] = folder
-
-    # validate trakt client_id
-    trakt = Trakt(cfg)
-    sonarr = Sonarr(cfg.sonarr.url, cfg.sonarr.api_key)
-
-    validate_trakt(trakt, notifications)
-    validate_pvr(sonarr, 'Sonarr', notifications)
-
-    # quality profile id
-    quality_profile_id = get_quality_profile_id(sonarr, cfg.sonarr.quality)
-
-    # language profile id
-    language_profile_id = get_language_profile_id(sonarr, cfg.sonarr.language)
-
-    # profile tags
-    profile_tags = None
-    tag_ids = None
-    tag_names = None
-
-    if cfg.sonarr.tags is not None:
-        profile_tags = get_profile_tags(sonarr)
-        if profile_tags is not None:
-            # determine which tags to use when adding this series
-            tag_ids = sonarr_helper.series_tag_ids_list_builder(
-                profile_tags,
-                cfg.sonarr.tags,
-            )
-            tag_names = sonarr_helper.series_tag_names_list_builder(
-                profile_tags,
-                tag_ids,
-            )
-
-    pvr_objects_list = get_objects(sonarr, 'Sonarr', notifications)
-
-    # get trakt series list
-    if list_type.lower() == 'anticipated':
-        trakt_objects_list = trakt.get_anticipated_shows(
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-        )
-
-    elif list_type.lower() == 'trending':
-        trakt_objects_list = trakt.get_trending_shows(
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-        )
-
-    elif list_type.lower() == 'popular':
-        trakt_objects_list = trakt.get_popular_shows(
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-        )
-
-    elif list_type.lower() == 'person':
-        if not person:
-            log.error("You must specify an person with the \'--person\' / \'-p\' parameter when using the \'person\'" +
-                      " list type!")
-            return None
-        trakt_objects_list = trakt.get_person_shows(
-            years=years,
-            person=person,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-            include_non_acting_roles=include_non_acting_roles,
-        )
-
-    elif list_type.lower() == 'recommended':
-        trakt_objects_list = trakt.get_recommended_shows(
-            authenticate_user,
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-        )
-
-    elif list_type.lower().startswith('played'):
-        most_type = misc_helper.substring_after(list_type.lower(), "_")
-        trakt_objects_list = trakt.get_most_played_shows(
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-            most_type=most_type if most_type else None,
-        )
-
-    elif list_type.lower().startswith('watched'):
-        most_type = misc_helper.substring_after(list_type.lower(), "_")
-        trakt_objects_list = trakt.get_most_watched_shows(
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-            most_type=most_type if most_type else None,
-        )
-
-    elif list_type.lower() == 'watchlist':
-        trakt_objects_list = trakt.get_watchlist_shows(authenticate_user)
-    else:
-        trakt_objects_list = trakt.get_user_list_shows(list_type, authenticate_user)
-
-    if not trakt_objects_list:
-        log.error("Aborting due to failure to retrieve Trakt \'%s\' shows list.", list_type.capitalize())
-        if notifications:
-            callback_notify(
-                {'event': 'abort', 'type': 'shows', 'list_type': list_type,
-                 'reason': 'Failure to retrieve Trakt \'%s\' shows list.' % list_type.capitalize()})
-        return None
-    else:
-        log.info("Retrieved Trakt \'%s\' shows list, shows found: %d", list_type.capitalize(), len(trakt_objects_list))
-
-    # set remove_rejected_recommended to False if this is not the recommended list
-    if list_type.lower() != 'recommended':
-        remove_rejected_from_recommended = False
-
-    # build filtered series list without series that exist in sonarr
-    processed_series_list = sonarr_helper.remove_existing_series_from_trakt_list(
-        pvr_objects_list,
-        trakt_objects_list,
-        callback_remove_recommended if remove_rejected_from_recommended else None
-    )
-
-    if processed_series_list is None:
-        log.error("Aborting due to failure to remove existing Sonarr shows from retrieved Trakt shows list.")
-        if notifications:
-            callback_notify({'event': 'abort', 'type': 'shows', 'list_type': list_type,
-                             'reason': 'Failure to remove existing Sonarr shows from retrieved Trakt \'%s\' shows list.'
-                                       % list_type.capitalize()})
-        return None
-    else:
-        log.info("Removed existing Sonarr shows from Trakt shows list, shows left to process: %d",
-                 len(processed_series_list))
-
-    # sort filtered series list
-    if sort == 'release':
-        sorted_series_list = misc_helper.sorted_list(processed_series_list, 'show', 'first_aired')
-        log.info("Sorted shows list to process by recent 'release' date.")
-    elif sort == 'rating':
-        sorted_series_list = misc_helper.sorted_list(processed_series_list, 'show', 'rating')
-        log.info("Sorted shows list to process by highest 'rating'.")
-    else:
-        sorted_series_list = misc_helper.sorted_list(processed_series_list, 'show', 'votes')
-        log.info("Sorted shows list to process by highest 'votes'.")
-
-    # loop series_list
-    log.info("Processing list now...")
-    for series in sorted_series_list:
-        # noinspection PyBroadException
-
-        # set common series variables
-        series_tvdb_id = series['show']['ids']['tvdb']
-        series_title = series['show']['title']
-
-        # convert series year to string
-        if series['show']['year']:
-            series_year = str(series['show']['year'])
-        elif series['show']['first_aired']:
-            series_year = misc_str.get_year_from_timestamp(series['show']['first_aired'])
-        else:
-            series_year = '????'
-
-        # series type
-        if any('anime' in s.lower() for s in series['show']['genres']):
-            series_type = 'anime'
-        else:
-            series_type = 'standard'
-
-        log.debug("Set series type for \'%s (%s)\' to: %s", series_title, series_year, series_type.title())
-
-        # build list of genres
-        series_genres = (', '.join(series['show']['genres'])).title() if series['show']['genres'] else 'N/A'
-
-        try:
-            # check if movie has a valid TVDB ID and that it exists on TVDB
-            if not tvdb_helper.check_series_tvdb_id(series_title, series_year, series_tvdb_id):
-                continue
-
-            # check if genres matches genre(s) supplied via argument
-            if genres and not misc_helper.allowed_genres(genres, 'show', series):
-                log.debug("SKIPPING: \'%s (%s)\' because it was not from the genre(s): %s", series_title,
-                          series_year, ', '.join(map(lambda x: x.title(), genres)))
-                continue
-
-            # check if series passes out blacklist criteria inspection
-            if not trakt_helper.is_show_blacklisted(
-                    series,
-                    cfg.filters.shows,
-                    ignore_blacklist,
-                    callback_remove_recommended if remove_rejected_from_recommended else None,
-            ):
-
-                log.info("ADDING: %s (%s) | Country: %s | Language: %s | Genre(s): %s | Network: %s",
-                         series_title,
-                         series_year,
-                         (series['show']['country'] or 'N/A').upper(),
-                         (series['show']['language'] or 'N/A').upper(),
-                         series_genres,
-                         (series['show']['network'] or 'N/A').upper(),
-                         )
-
-                if dry_run:
-                    log.info("dry-run: SKIPPING")
-                else:
-                    # add show to sonarr
-                    if sonarr.add_series(
-                            series['show']['ids']['tvdb'],
-                            series_title,
-                            series['show']['ids']['slug'],
-                            quality_profile_id,
-                            language_profile_id,
-                            cfg.sonarr.root_folder,
-                            cfg.sonarr.season_folder,
-                            tag_ids,
-                            not no_search,
-                            series_type,
-                    ):
-
-                        if profile_tags is not None and tag_names is not None:
-                            log.info("ADDED: \'%s (%s)\' with Sonarr Tags: %s", series_title, series_year,
-                                     tag_names)
-                        else:
-                            log.info("ADDED: \'%s (%s)\'", series_title, series_year)
-                        if notifications:
-                            callback_notify({'event': 'add_show', 'list_type': list_type, 'show': series['show']})
-                        added_shows += 1
-                    else:
-                        if profile_tags is not None:
-                            log.error("FAILED ADDING: \'%s (%s)\' with Sonarr Tags: %s", series_title, series_year,
-                                      tag_names)
-                        else:
-                            log.info("FAILED ADDING: \'%s (%s)\'", series_title, series_year)
-                        continue
-
-            else:
-                log.info("SKIPPED: \'%s (%s)\'", series_title, series_year)
-                continue
-
-            # stop adding shows, if added_shows >= add_limit
-            if add_limit and added_shows >= add_limit:
-                break
-
-            # sleep before adding any more
-            time.sleep(add_delay)
-
-        except Exception:
-            log.exception("Exception while processing show \'%s\': ", series_title)
-
-    log.info("Added %d new show(s) to Sonarr", added_shows)
-
-    # send notification
-    if notifications and (cfg.notifications.verbose or added_shows > 0):
-        notify.send(message="Added %d shows from Trakt's \'%s\' list" % (added_shows, list_type))
-
-    return added_shows
 
 
 ############################################################
@@ -887,337 +1122,27 @@ def movies(
         remove_rejected_from_recommended=False,
         dry_run=False,
 ):
-
-    from media.radarr import Radarr
-    from media.trakt import Trakt
-    from helpers import misc as misc_helper
-    from helpers import radarr as radarr_helper
-    from helpers import trakt as trakt_helper
-    from helpers import omdb as omdb_helper
-    from helpers import tmdb as tmdb_helper
-    from helpers import parameter as parameter_helper
-
-    added_movies = 0
-
-    # process countries
-    if not cfg.filters.movies.allowed_countries or 'ignore' in cfg.filters.movies.allowed_countries:
-        countries = None
-    else:
-        countries = cfg.filters.movies.allowed_countries
-
-    # process languages
-    if not cfg.filters.movies.allowed_languages or 'ignore' in cfg.filters.movies.allowed_languages:
-        languages = None
-    else:
-        languages = cfg.filters.movies.allowed_languages
-
-    # process genres
-    if genres:
-        # split comma separated list
-        genres = sorted(genres.split(','), key=str.lower)
-
-        # look for special keyword 'ignore'
-        if 'ignore' in genres:
-            # set special keyword 'ignore' to movies's blacklisted_genres list
-            cfg['filters']['movies']['blacklisted_genres'] = ['ignore']
-            # set genre search parameter to None
-            genres = None
-        else:
-            # remove genre from movies's blacklisted_genres list, if it's there
-            misc_helper.unblacklist_genres(genres, cfg['filters']['movies']['blacklisted_genres'])
-            log.debug("Filter Trakt results with genre(s): %s", ', '.join(map(lambda x: x.title(), genres)))
-
-    # process years parameter
-    years, new_min_year, new_max_year = parameter_helper.years(
-        years,
-        cfg.filters.movies.blacklisted_min_year,
-        cfg.filters.movies.blacklisted_max_year,
+    """Add movies from Trakt to Radarr."""
+    return _process_media(
+        media_type='movies',
+        list_type=list_type,
+        add_limit=add_limit,
+        add_delay=add_delay,
+        sort=sort,
+        years=years,
+        genres=genres,
+        folder=folder,
+        person=person,
+        include_non_acting_roles=include_non_acting_roles,
+        no_search=no_search,
+        notifications=notifications,
+        authenticate_user=authenticate_user,
+        ignore_blacklist=ignore_blacklist,
+        remove_rejected_from_recommended=remove_rejected_from_recommended,
+        dry_run=dry_run,
+        rotten_tomatoes=rotten_tomatoes,
+        minimum_availability=minimum_availability
     )
-
-    cfg['filters']['movies']['blacklisted_min_year'] = new_min_year
-    cfg['filters']['movies']['blacklisted_max_year'] = new_max_year
-
-    # runtimes range
-    if cfg.filters.movies.blacklisted_min_runtime:
-        min_runtime = cfg.filters.movies.blacklisted_min_runtime
-    else:
-        min_runtime = 0
-
-    if cfg.filters.movies.blacklisted_max_runtime and cfg.filters.movies.blacklisted_max_runtime >= min_runtime:
-        max_runtime = cfg.filters.movies.blacklisted_max_runtime
-    else:
-        max_runtime = 9999
-
-    if min_runtime == 0 and max_runtime == 9999:
-        runtimes = None
-    else:
-        runtimes = str(min_runtime) + '-' + str(max_runtime)
-
-    # replace radarr root_folder if folder is supplied
-    if folder:
-        cfg['radarr']['root_folder'] = folder
-    log.debug('Set root folder to: \'%s\'', cfg['radarr']['root_folder'])
-
-    # replace radarr.minimum_availability if minimum_availability is supplied
-    valid_min_avail = ['announced', 'in_cinemas', 'released']
-
-    if minimum_availability:
-        cfg['radarr']['minimum_availability'] = minimum_availability
-    elif cfg['radarr']['minimum_availability'] not in valid_min_avail:
-        cfg['radarr']['minimum_availability'] = 'released'
-
-    log.debug('Set minimum availability to: \'%s\'', cfg['radarr']['minimum_availability'])
-
-    # validate trakt api_key
-    trakt = Trakt(cfg)
-    radarr = Radarr(cfg.radarr.url, cfg.radarr.api_key)
-
-    validate_trakt(trakt, notifications)
-    validate_pvr(radarr, 'Radarr', notifications)
-
-    # quality profile id
-    quality_profile_id = get_quality_profile_id(radarr, cfg.radarr.quality)
-
-    pvr_objects_list = get_objects(radarr, 'Radarr', notifications)
-    pvr_exclusions_list = get_exclusions(radarr, 'Radarr')
-
-    # get trakt movies list
-    if list_type.lower() == 'anticipated':
-        trakt_objects_list = trakt.get_anticipated_movies(
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-        )
-
-    elif list_type.lower() == 'trending':
-        trakt_objects_list = trakt.get_trending_movies(
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-        )
-
-    elif list_type.lower() == 'popular':
-        trakt_objects_list = trakt.get_popular_movies(
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-        )
-
-    elif list_type.lower() == 'boxoffice':
-        trakt_objects_list = trakt.get_boxoffice_movies()
-
-    elif list_type.lower() == 'person':
-        if not person:
-            log.error("You must specify an person with the \'--person\' / \'-p\' parameter when using the \'person\'" +
-                      " list type!")
-            return None
-        trakt_objects_list = trakt.get_person_movies(
-            years=years,
-            person=person,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-            include_non_acting_roles=include_non_acting_roles,
-        )
-
-    elif list_type.lower() == 'recommended':
-        trakt_objects_list = trakt.get_recommended_movies(
-            authenticate_user,
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-        )
-
-    elif list_type.lower().startswith('played'):
-        most_type = misc_helper.substring_after(list_type.lower(), "_")
-        trakt_objects_list = trakt.get_most_played_movies(
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-            most_type=most_type if most_type else None,
-        )
-
-    elif list_type.lower().startswith('watched'):
-        most_type = misc_helper.substring_after(list_type.lower(), "_")
-        trakt_objects_list = trakt.get_most_watched_movies(
-            years=years,
-            countries=countries,
-            languages=languages,
-            genres=genres,
-            runtimes=runtimes,
-            most_type=most_type if most_type else None,
-        )
-
-    elif list_type.lower() == 'watchlist':
-        trakt_objects_list = trakt.get_watchlist_movies(authenticate_user)
-    else:
-        trakt_objects_list = trakt.get_user_list_movies(list_type, authenticate_user)
-
-    if not trakt_objects_list:
-        log.error("Aborting due to failure to retrieve Trakt \'%s\' movies list.", list_type.capitalize())
-        if notifications:
-            callback_notify(
-                {'event': 'abort', 'type': 'movies', 'list_type': list_type,
-                 'reason': 'Failure to retrieve Trakt \'%s\' movies list.' % list_type.capitalize()})
-        return None
-    else:
-        log.info("Retrieved Trakt \'%s\' movies list, movies found: %d", list_type.capitalize(),
-                 len(trakt_objects_list))
-
-    # set remove_rejected_recommended to False if this is not the recommended list
-    if list_type.lower() != 'recommended':
-        remove_rejected_from_recommended = False
-
-    # build filtered movie list without movies that exist in radarr
-    processed_movies_list, removal_successful = radarr_helper.remove_existing_and_excluded_movies_from_trakt_list(
-        pvr_objects_list,
-        pvr_exclusions_list,
-        trakt_objects_list,
-        callback_remove_recommended if remove_rejected_from_recommended else None)
-
-    if processed_movies_list is None:
-        if not removal_successful:
-            log.error("Aborting due to failure to remove existing Radarr movies from retrieved Trakt movies list.")
-            if notifications:
-                callback_notify({'event': 'abort', 'type': 'movies', 'list_type': list_type,
-                                 'reason': 'Failure to remove existing Radarr movies from retrieved '
-                                           'Trakt \'%s\' movies list.' % list_type.capitalize()})
-        else:
-            log.info("No more movies left to process in \'%s\' movies list.", list_type.capitalize())
-        return None
-    else:
-        log.info("Removed existing and excluded Radarr movies from Trakt movies list. Movies left to process: %d",
-                 len(processed_movies_list))
-
-    # sort filtered movie list
-    if sort == 'release':
-        sorted_movies_list = misc_helper.sorted_list(processed_movies_list, 'movie', 'released')
-        log.info("Sorted movies list to process by recent 'release' date.")
-    elif sort == 'rating':
-        sorted_movies_list = misc_helper.sorted_list(processed_movies_list, 'movie', 'rating')
-        log.info("Sorted movies list to process by highest 'rating'.")
-    else:
-        sorted_movies_list = misc_helper.sorted_list(processed_movies_list, 'movie', 'votes')
-        log.info("Sorted movies list to process by highest 'votes'.")
-
-    # display specified min RT score
-    if rotten_tomatoes is not None:
-        if cfg.omdb.api_key:
-            log.info("Minimum Rotten Tomatoes score of %d%% requested.", rotten_tomatoes)
-        else:
-            log.info("Skipping minimum Rotten Tomatoes score check as OMDb API Key is missing.")
-
-    # loop movies
-    log.info("Processing list now...")
-    for sorted_movie in sorted_movies_list:
-        # noinspection PyBroadException
-
-        # set common series variables
-        movie_title = sorted_movie['movie']['title']
-        movie_tmdb_id = sorted_movie['movie']['ids']['tmdb']
-        movie_imdb_id = sorted_movie['movie']['ids']['imdb']
-
-        # convert movie year to string
-        movie_year = str(sorted_movie['movie']['year']) \
-            if sorted_movie['movie']['year'] else '????'
-
-        # build list of genres
-        movie_genres = (', '.join(sorted_movie['movie']['genres'])).title() \
-            if sorted_movie['movie']['genres'] else 'N/A'
-
-        try:
-            # check if movie has a valid TMDb ID and that it exists on TMDb
-            if not tmdb_helper.check_movie_tmdb_id(movie_title, movie_year, movie_tmdb_id):
-                continue
-
-            # check if genres matches genre(s) supplied via argument
-            if genres and not misc_helper.allowed_genres(genres, 'movie', sorted_movie):
-                log.debug("SKIPPING: \'%s (%s)\' because it was not from the genre(s): %s", movie_title,
-                          movie_year, ', '.join(map(lambda x: x.title(), genres)))
-                continue
-
-            # check if movie passes out blacklist criteria inspection
-            if not trakt_helper.is_movie_blacklisted(
-                    sorted_movie,
-                    cfg.filters.movies,
-                    ignore_blacklist,
-                    callback_remove_recommended if remove_rejected_from_recommended else None,
-            ):
-
-                # Skip movie if below user specified min RT score
-                if rotten_tomatoes is not None and cfg.omdb.api_key:
-                    if not omdb_helper.does_movie_have_min_req_rt_score(
-                            cfg.omdb.api_key,
-                            movie_title,
-                            movie_year,
-                            movie_imdb_id,
-                            rotten_tomatoes,
-                    ):
-                        continue
-
-                log.info("ADDING: \'%s (%s)\' | Country: %s | Language: %s | Genre(s): %s ",
-                         movie_title,
-                         movie_year,
-                         (sorted_movie['movie']['country'] or 'N/A').upper(),
-                         (sorted_movie['movie']['language'] or 'N/A').upper(),
-                         movie_genres,
-                         )
-
-                if dry_run:
-                    log.info("dry-run: SKIPPING")
-                else:
-                    # add movie to radarr
-                    if radarr.add_movie(
-                            sorted_movie['movie']['ids']['tmdb'],
-                            movie_title,
-                            movie_year,
-                            sorted_movie['movie']['ids']['slug'],
-                            quality_profile_id,
-                            cfg.radarr.root_folder,
-                            cfg.radarr.minimum_availability,
-                            not no_search,
-                    ):
-
-                        log.info("ADDED: \'%s (%s)\'", movie_title, movie_year)
-                        if notifications:
-                            callback_notify({'event': 'add_movie', 'list_type': list_type, 'movie': sorted_movie['movie']})
-                        added_movies += 1
-                    else:
-                        log.error("FAILED ADDING: \'%s (%s)\'", movie_title, movie_year)
-                        continue
-            else:
-                log.info("SKIPPED: \'%s (%s)\'", movie_title, movie_year)
-                continue
-
-            # stop adding movies, if added_movies >= add_limit
-            if add_limit and added_movies >= add_limit:
-                break
-
-            # sleep before adding any more
-            time.sleep(add_delay)
-
-        except Exception:
-            log.exception("Exception while processing movie \'%s\': ", movie_title)
-
-    log.info("Added %d new movie(s) to Radarr", added_movies)
-
-    # send notification
-    if notifications and (cfg.notifications.verbose or added_movies > 0):
-        notify.send(message="Added %d movie(s) from Trakt's \'%s\' list" % (added_movies, list_type.capitalize()))
-
-    return added_movies
-
 
 ############################################################
 # CALLBACKS
@@ -1349,7 +1274,6 @@ def _automatic_media(
     # Configure based on media type
     if media_type == 'shows':
         config_key = 'shows'
-        callback_func = shows.callback
         filters_config = cfg.filters.shows
         media_name_singular = 'show'
         media_name_plural = 'shows'
@@ -1357,7 +1281,6 @@ def _automatic_media(
         callback_kwargs = {}
     elif media_type == 'movies':
         config_key = 'movies'
-        callback_func = movies.callback
         filters_config = cfg.filters.movies
         media_name_singular = 'movie'
         media_name_plural = 'movies'
@@ -1399,7 +1322,8 @@ def _automatic_media(
                     local_ignore_blacklist = True
 
                 # run callback
-                added_items = callback_func(
+                added_items = _process_media(
+                    media_type=media_type,
                     list_type=list_type,
                     add_limit=limit,
                     add_delay=add_delay,
@@ -1425,7 +1349,8 @@ def _automatic_media(
                         local_ignore_blacklist = True
 
                     # run callback
-                    added_items = callback_func(
+                    added_items = _process_media(
+                        media_type=media_type,
                         list_type=list_type,
                         add_limit=limit,
                         add_delay=add_delay,
@@ -1461,7 +1386,8 @@ def _automatic_media(
                         local_ignore_blacklist = True
 
                     # run callback
-                    added_items = callback_func(
+                    added_items = _process_media(
+                        media_type=media_type,
                         list_type=list_,
                         add_limit=limit,
                         add_delay=add_delay,
@@ -1634,3 +1560,4 @@ if __name__ == "__main__":
 
     # Start application
     app()
+
