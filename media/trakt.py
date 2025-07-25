@@ -25,6 +25,7 @@ class Trakt:
     ############################################################
 
     def _make_request(self, url, payload=None, authenticate_user=None, request_type='get'):
+        log.debug("User: %s", authenticate_user)
         headers, authenticate_user = self._headers(authenticate_user)
         headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' \
                                 '(KHTML, like Gecko) Chrome/71.0.3578.80 Safari/537.36'
@@ -367,7 +368,7 @@ class Trakt:
         import copy
 
         users = copy.copy(self.cfg.trakt)
-
+        log.debug("Users: %s", users)
         if 'client_id' in users.keys():
             users.pop('client_id')
 
@@ -394,7 +395,10 @@ class Trakt:
 
     def _user_used_for_authentication(self, user=None):
         if user is None:
+            log.debug("Attempting to get first auth user")
             user = self._get_first_authenticated_user()
+            log.debug("Got auth user: %s", user)
+
         elif not self._user_is_authenticated(user):
             log.error('The user %s you specified to use for authentication is not authenticated yet. ' +
                       'Authenticate the user first, before you use it to retrieve lists.', user)

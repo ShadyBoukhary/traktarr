@@ -1294,129 +1294,14 @@ def automatic_shows(
         notifications=False,
         ignore_blacklist=False,
 ):
-
-    from media.trakt import Trakt
-
-    total_shows_added = 0
-    # noinspection PyBroadException
-    try:
-        log.info("Automatic Shows task started.")
-
-        # send notification
-        if notifications and cfg.notifications.verbose:
-            notify.send(message="Automatic Shows task started.")
-
-        for list_type, value in cfg.automatic.shows.items():
-            added_shows = None
-
-            if list_type.lower() == 'interval':
-                continue
-
-            if list_type.lower() in Trakt.non_user_lists or (
-                    '_' in list_type and list_type.lower().partition("_")[0] in Trakt.non_user_lists):
-                limit = value
-
-                if limit <= 0:
-                    log.info("SKIPPED Trakt's \'%s\' shows list.", list_type.capitalize())
-                    continue
-                else:
-                    log.info("ADDING %d show(s) from Trakt's \'%s\' list.", limit, list_type.capitalize())
-
-                local_ignore_blacklist = ignore_blacklist
-
-                if list_type.lower() in cfg.filters.shows.disabled_for:
-                    local_ignore_blacklist = True
-
-                # run shows
-                added_shows = shows.callback(
-                    list_type=list_type,
-                    add_limit=limit,
-                    add_delay=add_delay,
-                    sort=sort,
-                    no_search=no_search,
-                    notifications=notifications,
-                    ignore_blacklist=local_ignore_blacklist,
-                )
-
-            elif list_type.lower() == 'watchlist':
-                for authenticate_user, limit in value.items():
-                    if limit <= 0:
-                        log.info("SKIPPED Trakt user \'%s\''s \'%s\'", authenticate_user, list_type.capitalize)
-                        continue
-                    else:
-                        log.info("ADDING %d show(s) from Trakt user \'%s\''s \'%s\'", limit, authenticate_user,
-                                 list_type.capitalize)
-
-                    local_ignore_blacklist = ignore_blacklist
-
-                    if "watchlist:%s".format(authenticate_user) in cfg.filters.shows.disabled_for:
-                        local_ignore_blacklist = True
-
-                    # run shows
-                    added_shows = shows.callback(
-                        list_type=list_type,
-                        add_limit=limit,
-                        add_delay=add_delay,
-                        sort=sort,
-                        no_search=no_search,
-                        notifications=notifications,
-                        authenticate_user=authenticate_user,
-                        ignore_blacklist=local_ignore_blacklist,
-                    )
-
-            elif list_type.lower() == 'lists':
-
-                if len(value.items()) == 0:
-                    log.info("SKIPPED Trakt's \'%s\' shows list.", list_type.capitalize())
-                    continue
-
-                for list_, v in value.items():
-                    if isinstance(v, dict):
-                        authenticate_user = v['authenticate_user']
-                        limit = v['limit']
-                    else:
-                        authenticate_user = None
-                        limit = v
-
-                    if limit <= 0:
-                        log.info("SKIPPED Trakt's \'%s\' shows list.", list_)
-                        continue
-
-                    local_ignore_blacklist = ignore_blacklist
-
-                    if "list:%s".format(list_) in cfg.filters.shows.disabled_for:
-                        local_ignore_blacklist = True
-
-                    # run shows
-                    added_shows = shows.callback(
-                        list_type=list_,
-                        add_limit=limit,
-                        add_delay=add_delay,
-                        sort=sort,
-                        no_search=no_search,
-                        notifications=notifications,
-                        authenticate_user=authenticate_user,
-                        ignore_blacklist=local_ignore_blacklist,
-                    )
-
-            if added_shows is None:
-                if list_type.lower() != 'lists':
-                    log.info("FAILED ADDING shows from Trakt's \'%s\' list.", list_type)
-                time.sleep(10)
-                continue
-            total_shows_added += added_shows
-
-            # sleep
-            time.sleep(10)
-
-        log.info("FINISHED: Added %d show(s) total to Sonarr!", total_shows_added)
-        # send notification
-        if notifications and (cfg.notifications.verbose or total_shows_added > 0):
-            notify.send(message="Added %d show(s) total to Sonarr!" % total_shows_added)
-
-    except Exception:
-        log.exception("Exception while automatically adding shows: ")
-    return
+    return _automatic_media(
+        'shows',
+        add_delay=add_delay,
+        sort=sort,
+        no_search=no_search,
+        notifications=notifications,
+        ignore_blacklist=ignore_blacklist
+    )
 
 
 def automatic_movies(
@@ -1427,20 +1312,73 @@ def automatic_movies(
         ignore_blacklist=False,
         rotten_tomatoes=None,
 ):
+    return _automatic_media(
+        'movies',
+        add_delay=add_delay,
+        sort=sort,
+        no_search=no_search,
+        notifications=notifications,
+        ignore_blacklist=ignore_blacklist,
+        rotten_tomatoes=rotten_tomatoes
+    )
 
+
+def _automatic_media(
+        media_type,
+        add_delay=2.5,
+        sort='votes',
+        no_search=False,
+        notifications=False,
+        ignore_blacklist=False,
+        rotten_tomatoes=None,
+):
+    """
+    Common function for automatic adding of shows and movies.
+    
+    Args:
+        media_type: 'shows' or 'movies'
+        add_delay: Seconds between each add request
+        sort: Sort method for lists
+        no_search: Disable search when adding
+        notifications: Send notifications
+        ignore_blacklist: Ignore blacklist filters
+        rotten_tomatoes: Minimum RT score (movies only)
+    """
     from media.trakt import Trakt
 
-    total_movies_added = 0
+    # Configure based on media type
+    if media_type == 'shows':
+        config_key = 'shows'
+        callback_func = shows.callback
+        filters_config = cfg.filters.shows
+        media_name_singular = 'show'
+        media_name_plural = 'shows'
+        target_service = 'Sonarr'
+        callback_kwargs = {}
+    elif media_type == 'movies':
+        config_key = 'movies'
+        callback_func = movies.callback
+        filters_config = cfg.filters.movies
+        media_name_singular = 'movie'
+        media_name_plural = 'movies'
+        target_service = 'Radarr'
+        callback_kwargs = {'rotten_tomatoes': rotten_tomatoes} if rotten_tomatoes else {}
+    else:
+        raise ValueError(f"Invalid media_type: {media_type}. Must be 'shows' or 'movies'")
+
+    total_added = 0
     # noinspection PyBroadException
     try:
-        log.info("Automatic Movies task started.")
+        log.info("Automatic %s task started.", media_name_plural.title())
 
         # send notification
         if notifications and cfg.notifications.verbose:
-            notify.send(message="Automatic Movies task started.")
+            notify.send(message=f"Automatic {media_name_plural.title()} task started.")
 
-        for list_type, value in cfg.automatic.movies.items():
-            added_movies = None
+        automatic_config = getattr(cfg.automatic, config_key)
+        
+        for list_type, value in automatic_config.items():
+            added_items = None
 
             if list_type.lower() == 'interval':
                 continue
@@ -1450,18 +1388,18 @@ def automatic_movies(
                 limit = value
 
                 if limit <= 0:
-                    log.info("SKIPPED Trakt's \'%s\' movies list.", list_type.capitalize())
+                    log.info("SKIPPED Trakt's '%s' %s list.", list_type.capitalize(), media_name_plural)
                     continue
                 else:
-                    log.info("ADDING %d movie(s) from Trakt's \'%s\' list.", limit, list_type.capitalize())
+                    log.info("ADDING %d %s from Trakt's '%s' list.", limit, media_name_singular + "(s)", list_type.capitalize())
 
                 local_ignore_blacklist = ignore_blacklist
 
-                if list_type.lower() in cfg.filters.movies.disabled_for:
+                if list_type.lower() in filters_config.disabled_for:
                     local_ignore_blacklist = True
 
-                # run movies
-                added_movies = movies.callback(
+                # run callback
+                added_items = callback_func(
                     list_type=list_type,
                     add_limit=limit,
                     add_delay=add_delay,
@@ -1469,25 +1407,25 @@ def automatic_movies(
                     no_search=no_search,
                     notifications=notifications,
                     ignore_blacklist=local_ignore_blacklist,
-                    rotten_tomatoes=rotten_tomatoes,
+                    **callback_kwargs
                 )
 
             elif list_type.lower() == 'watchlist':
                 for authenticate_user, limit in value.items():
                     if limit <= 0:
-                        log.info("SKIPPED Trakt user \'%s\''s \'%s\'", authenticate_user, list_type.capitalize)
+                        log.info("SKIPPED Trakt user '%s''s '%s'", authenticate_user, list_type.capitalize())
                         continue
                     else:
-                        log.info("ADDING %d movie(s) from Trakt user \'%s\''s \'%s\'", limit,
-                                 authenticate_user, list_type.capitalize())
+                        log.info("ADDING %d %s from Trakt user '%s''s '%s'", limit, 
+                                media_name_singular + "(s)", authenticate_user, list_type.capitalize())
 
                     local_ignore_blacklist = ignore_blacklist
 
-                    if "watchlist:%s".format(authenticate_user) in cfg.filters.movies.disabled_for:
+                    if f"watchlist:{authenticate_user}" in filters_config.disabled_for:
                         local_ignore_blacklist = True
 
-                    # run movies
-                    added_movies = movies.callback(
+                    # run callback
+                    added_items = callback_func(
                         list_type=list_type,
                         add_limit=limit,
                         add_delay=add_delay,
@@ -1496,13 +1434,13 @@ def automatic_movies(
                         notifications=notifications,
                         authenticate_user=authenticate_user,
                         ignore_blacklist=local_ignore_blacklist,
-                        rotten_tomatoes=rotten_tomatoes,
+                        **callback_kwargs
                     )
 
             elif list_type.lower() == 'lists':
 
                 if len(value.items()) == 0:
-                    log.info("SKIPPED Trakt's \'%s\' movies list", list_type.capitalize())
+                    log.info("SKIPPED Trakt's '%s' %s list.", list_type.capitalize(), media_name_plural)
                     continue
 
                 for list_, v in value.items():
@@ -1514,16 +1452,16 @@ def automatic_movies(
                         limit = v
 
                     if limit <= 0:
-                        log.info("SKIPPED Trakt's \'%s\' movies list.", list_)
+                        log.info("SKIPPED Trakt's '%s' %s list.", list_, media_name_plural)
                         continue
 
                     local_ignore_blacklist = ignore_blacklist
 
-                    if "list:%s".format(list_) in cfg.filters.movies.disabled_for:
+                    if f"list:{list_}" in filters_config.disabled_for:
                         local_ignore_blacklist = True
 
-                    # run shows
-                    added_movies = movies.callback(
+                    # run callback
+                    added_items = callback_func(
                         list_type=list_,
                         add_limit=limit,
                         add_delay=add_delay,
@@ -1532,26 +1470,26 @@ def automatic_movies(
                         notifications=notifications,
                         authenticate_user=authenticate_user,
                         ignore_blacklist=local_ignore_blacklist,
-                        rotten_tomatoes=rotten_tomatoes,
+                        **callback_kwargs
                     )
 
-            if added_movies is None:
+            if added_items is None:
                 if list_type.lower() != 'lists':
-                    log.info("FAILED ADDING movies from Trakt's \'%s\' list.", list_type.capitalize())
+                    log.info("FAILED ADDING %s from Trakt's '%s' list.", media_name_plural, list_type.capitalize())
                 time.sleep(10)
                 continue
-            total_movies_added += added_movies
+            total_added += added_items
 
             # sleep
             time.sleep(10)
 
-        log.info("FINISHED: Added %d movie(s) total to Radarr!", total_movies_added)
+        log.info("FINISHED: Added %d %s total to %s!", total_added, media_name_singular + "(s)", target_service)
         # send notification
-        if notifications and (cfg.notifications.verbose or total_movies_added > 0):
-            notify.send(message="Added %d movie(s) total to Radarr!" % total_movies_added)
+        if notifications and (cfg.notifications.verbose or total_added > 0):
+            notify.send(message=f"Added {total_added} {media_name_singular}(s) total to {target_service}!")
 
     except Exception:
-        log.exception("Exception while automatically adding movies: ")
+        log.exception("Exception while automatically adding %s: ", media_name_plural)
     return
 
 
