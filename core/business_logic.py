@@ -1253,7 +1253,7 @@ def _automatic_media(
 
     except Exception:
         log.exception("Exception while automatically adding %s: ", media_name_plural)
-    return
+    return total_added
 
 
 def run_automatic_mode(
