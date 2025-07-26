@@ -23,14 +23,17 @@
   - [Sample Configuration](#sample-configuration)
   - [Core](#core)
   - [Automatic](#automatic)
-    - [Personal Watchlists](#personal-watchlists)
+    - [Scheduling](#scheduling)
+    - [Official Trakt Lists](#official-trakt-lists)
     - [Custom Lists](#custom-lists)
       - [Public Lists](#public-lists)
       - [Private Lists](#private-lists)
+    - [Personal Trakt Watchlists](#personal-trakt-watchlists)
   - [Filters](#filters)
     - [Movies](#movies)
     - [Shows](#shows)
   - [Notifications](#notifications)
+    - [General](#general)
     - [Apprise](#apprise)
     - [Pushover](#pushover)
     - [Slack](#slack)
@@ -43,7 +46,7 @@
     - [Setup](#setup)
     - [Customize](#customize)
   - [Manual (CLI)](#manual-cli)
-    - [General](#general)
+    - [General](#general-1)
     - [Movie (Single Movie)](#movie-single-movie)
     - [Movies (Multiple Movies)](#movies-multiple-movies)
     - [Show (Single Show)](#show-single-show)
@@ -51,7 +54,6 @@
   - [Examples (CLI)](#examples-cli)
     - [Movies](#movies-1)
     - [Shows](#shows-1)
-- [Donate](#donate)
 
 <!-- /TOC -->
 
@@ -226,15 +228,41 @@ You can repeat this process for as many users as you like.
     "movies": {
       "anticipated": 3,
       "boxoffice": 10,
-      "interval": 24,
       "popular": 3,
-      "trending": 2
+      "trending": 2,
+      "watched": 2,
+      "watched_monthly": 2,
+      "watched_yearly": 2,
+      "watched_all": 2,
+      "played": 2,
+      "played_monthly": 2,
+      "played_yearly": 2,
+      "played_all": 2,
+      "watchlist": {},
+      "lists": {},
+      "intervals": {
+        "public_lists": 24,
+        "user_lists": 12
+      }
     },
     "shows": {
       "anticipated": 10,
-      "interval": 48,
       "popular": 1,
-      "trending": 2
+      "trending": 2,
+      "watched": 2,
+      "watched_monthly": 2,
+      "watched_yearly": 2,
+      "watched_all": 2,
+      "played": 2,
+      "played_monthly": 2,
+      "played_yearly": 2,
+      "played_all": 2,
+      "watchlist": {},
+      "lists": {},
+      "intervals": {
+        "public_lists": 48,
+        "user_lists": 6
+      }
     }
   },
   "filters": {
@@ -256,7 +284,7 @@ You can repeat this process for as many users as you like.
       "blacklisted_max_runtime": 0,
       "blacklisted_min_runtime": 60,
       "blacklisted_min_year": 2000,
-      "blacklisted_max_year": 2019,
+      "blacklisted_max_year": 2100,
       "blacklisted_title_keywords": [
         "untitled",
         "barbie",
@@ -304,7 +332,7 @@ You can repeat this process for as many users as you like.
       "blacklisted_max_runtime": 0,
       "blacklisted_min_runtime": 15,
       "blacklisted_min_year": 2000,
-      "blacklisted_max_year": 2019,
+      "blacklisted_max_year": 2100,
       "blacklisted_title_keywords": [],
       "blacklisted_tvdb_ids": []
     }
@@ -369,29 +397,47 @@ You can repeat this process for as many users as you like.
   "movies": {
     "anticipated": 3,
     "boxoffice": 10,
-    "interval": 24,
     "popular": 3,
-    "trending": 0,
+    "trending": 2,
     "watched": 2,
+    "watched_monthly": 2,
+    "watched_yearly": 2,
+    "watched_all": 2,
+    "played": 2,
+    "played_monthly": 2,
+    "played_yearly": 2,
     "played_all": 2,
     "watchlist": {},
     "lists": {},
+    "intervals": {
+      "public_lists": 24,
+      "user_lists": 12
+    }
   },
   "shows": {
     "anticipated": 10,
-    "interval": 48,
     "popular": 1,
     "trending": 2,
+    "watched": 2,
     "watched_monthly": 2,
+    "watched_yearly": 2,
+    "watched_all": 2,
     "played": 2,
+    "played_monthly": 2,
+    "played_yearly": 2,
+    "played_all": 2,
     "watchlist": {},
-    "lists": {}
+    "lists": {},
+    "intervals": {
+      "public_lists": 48,
+      "user_lists": 6
+    }
   }
 },
 ```
 Used for automatic / scheduled Traktarr tasks.
 
-Movies can be run on a separate schedule then from Shows.
+Movies can be run on a separate schedule from Shows.
 
 _Note: These settings are only needed if you plan to use Traktarr on a schedule (vs just using it as a CLI command only; see [Usage](#usage))._
 
@@ -401,13 +447,24 @@ Format:
 
 _Note: The number specified is the number of items that will be added into Radarr/Sonarr. It is not a Trakt list limit, i.e. this is not going to lookup Top X items._
 
-### Interval
+### Scheduling
 
-`interval` - Specify how often (in hours) to run Traktarr task.
+`intervals` - Specify separate schedules for different list types:
 
-  - Setting `interval` to `0`, will skip the schedule for that task.
+  - `public_lists` - How often (in hours) to run public Trakt lists (anticipated, popular, trending, boxoffice, watched*, played*)
+  - `user_lists` - How often (in hours) to run user-specific lists (watchlists, custom lists)
 
-  - For example, if you only want to add movies and not TV shows, you can set show's `interval` to `0`.
+This allows you to schedule public lists less frequently (e.g., daily) while checking user watchlists more often (e.g., every 6 hours).
+
+Setting an interval to `0` will disable scheduling for that list type.
+
+Example:
+```json
+"intervals": {
+  "public_lists": 24,  // Run public lists every 24 hours
+  "user_lists": 6      // Run user lists every 6 hours
+}
+```
 
 ### Official Trakt Lists
 

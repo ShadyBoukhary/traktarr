@@ -20,8 +20,8 @@ if __name__ == "__main__":
 
     print("""
 #########################################################################
-# Author:   l3uddz                                                      #
-# URL:      https://github.com/l3uddz/traktarr                          #
+# Author:   ShadyBoukhary                                              #
+# URL:      https://github.com/ShadyBoukhary/traktarr                   #
 # --                                                                    #
 #         Part of the Cloudbox project: https://cloudbox.works          #
 #########################################################################
