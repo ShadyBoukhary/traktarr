@@ -69,7 +69,17 @@ class Trakt:
             if req.status_code == 200 and len(resp_data):
                 return json.loads(resp_data)
             elif req.status_code == 401:
-                log.error("The authentication to Trakt is revoked. Please re-authenticate.")
+                log.warning("Received 401 unauthorized. Token may have expired.")
+                # Try to get the user from the request headers to refresh their token
+                user = self._get_user_from_headers(payload)
+                if user and self._attempt_token_refresh(user):
+                    log.info("Token refreshed, retrying request...")
+                    # Retry the request with the new token
+                    req, resp_data = self._make_request(url, payload)
+                    if req.status_code == 200 and len(resp_data):
+                        return json.loads(resp_data)
+                
+                log.error("The authentication to Trakt is revoked or refresh failed. Please re-authenticate.")
                 exit()
             else:
                 log.error("Failed to retrieve %s, request response: %d", object_name, req.status_code)
@@ -199,6 +209,11 @@ class Trakt:
                     else:
                         log.warning("Received malformed JSON response for page: %d of %d", current_page, total_pages)
 
+                    # check if we have fetched enough items based on the original limit
+                    if limit and len(processed) >= limit:
+                        log.debug("Reached desired limit of %d items, stopping pagination.", limit)
+                        break
+                    
                     # check if we have fetched the last page, break if so
                     if total_pages == 0:
                         log.debug("There were no more pages left to retrieve.")
@@ -206,19 +221,39 @@ class Trakt:
                     elif current_page >= total_pages:
                         log.debug("There are no more pages left to retrieve results from.")
                         break
+                    # Add safety limit to prevent fetching too many pages
+                    elif current_page >= 50:  # Maximum 50 pages (50k items with 1000 per page)
+                        log.warning("Reached maximum page limit (50 pages), stopping to prevent excessive API calls.")
+                        break
                     else:
                         log.info("There are %d page(s) left to retrieve results from.", total_pages - current_page)
                         payload['page'] += 1
                         time.sleep(sleep_between)
 
                 elif req.status_code == 401:
-                    log.error("The authentication to Trakt is revoked. Please re-authenticate.")
+                    log.warning("Received 401 unauthorized. Token may have expired.")
+                    # Try to refresh token for the authenticated user
+                    if authenticate_user and self._attempt_token_refresh(authenticate_user):
+                        log.info("Token refreshed, retrying request...")
+                        # Retry the request with the new token
+                        req, resp_data = self._make_request(url, payload, authenticate_user)
+                        if req.status_code == 200 and len(resp_data):
+                            resp_json = json.loads(resp_data)
+                            processed.extend(resp_json)
+                            continue  # Continue with the same page
+                    
+                    log.error("The authentication to Trakt is revoked or refresh failed. Please re-authenticate.")
                     exit()
                 else:
                     log.error("Failed to retrieve %s %s, request response: %d", type_name, object_name, req.status_code)
                     break
 
             if len(processed):
+                # Trim results to the requested limit if we exceeded it
+                if limit and len(processed) > limit:
+                    processed = processed[:limit]
+                    log.debug("Trimmed results to requested limit of %d items", limit)
+                
                 log.debug("Found %d %s %s", len(processed), type_name, object_name)
                 return processed
 
@@ -263,8 +298,16 @@ class Trakt:
         print(self._headers_without_authentication())
 
         # Request device code
-        req = requests.post('https://api.trakt.tv/oauth/device/code', params=payload,
+        req = requests.post('https://api.trakt.tv/oauth/device/code', data=payload,
                             headers=self._headers_without_authentication())
+        
+        log.debug("Device code request status: %d", req.status_code)
+        log.debug("Device code response text: %s", req.text[:500])  # Log first 500 chars
+        
+        if req.status_code != 200:
+            log.error("Failed to get device code. Status: %d, Response: %s", req.status_code, req.text)
+            return None
+            
         device_code_response = req.json()
 
         # Display needed information to the user
@@ -327,7 +370,7 @@ class Trakt:
                        'client_secret': self.cfg.trakt.client_secret, 'grant_type': 'authorization_code'}
 
             # Poll Trakt for access token
-            req = requests.post('https://api.trakt.tv/oauth/device/token', params=payload,
+            req = requests.post('https://api.trakt.tv/oauth/device/token', data=payload,
                                 headers=self._headers_without_authentication())
 
             success, status_code = self.__oauth_process_token_request(req)
@@ -345,8 +388,14 @@ class Trakt:
         payload = {'refresh_token': refresh_token, 'client_id': self.cfg.trakt.client_id,
                    'client_secret': self.cfg.trakt.client_secret, 'grant_type': 'refresh_token'}
 
-        req = requests.post('https://api.trakt.tv/oauth/token', params=payload,
+        log.debug("Attempting token refresh with payload: %s", {k: v if k != 'refresh_token' else '***' for k, v in payload.items()})
+        
+        req = requests.post('https://api.trakt.tv/oauth/token', data=payload,
                             headers=self._headers_without_authentication())
+
+        log.debug("Token refresh response status: %d", req.status_code)
+        if req.status_code != 200:
+            log.error("Token refresh failed with status %d: %s", req.status_code, req.text)
 
         success, status_code = self.__oauth_process_token_request(req)
 
@@ -355,6 +404,10 @@ class Trakt:
     def oauth_authentication(self):
         try:
             device_code_response = self.__oauth_request_device_code()
+            
+            if device_code_response is None:
+                log.error("Failed to get device code from Trakt API")
+                return False
 
             if self.__oauth_poll_for_access_token(device_code_response['device_code'],
                                                   device_code_response['interval'],
@@ -367,7 +420,7 @@ class Trakt:
     def _get_first_authenticated_user(self):
         import copy
 
-        users = copy.copy(self.cfg.trakt)
+        users = copy.deepcopy(dict(self.cfg.trakt))
         log.debug("Users: %s", users)
         if 'client_id' in users.keys():
             users.pop('client_id')
@@ -379,10 +432,10 @@ class Trakt:
             return list(users.keys())[0]
 
     def _user_is_authenticated(self, user):
-        return user in self.cfg['trakt'].keys()
+        return user in self.cfg.trakt.keys()
 
     def _renew_oauth_token_if_expired(self, user):
-        token_information = self.cfg['trakt'][user]
+        token_information = self.cfg.trakt[user]
 
         # Check if the access_token for the user is expired
         expires_at = token_information['created_at'] + token_information['expires_in']
@@ -391,7 +444,10 @@ class Trakt:
                      user)
 
             if self.__oauth_refresh_access_token(token_information["refresh_token"]):
-                log.info("The access token for the user %s has been refreshed. Please restart the application.", user)
+                log.info("The access token for the user %s has been refreshed successfully.", user)
+                # Config will be updated by the __oauth_process_token_request method
+            else:
+                log.error("Failed to refresh token for user %s", user)
 
     def _user_used_for_authentication(self, user=None):
         if user is None:
@@ -421,7 +477,7 @@ class Trakt:
 
         if user is not None:
             self._renew_oauth_token_if_expired(user)
-            headers['Authorization'] = 'Bearer ' + self.cfg['trakt'][user]['access_token']
+            headers['Authorization'] = 'Bearer ' + self.cfg.trakt[user]['access_token']
         else:
             log.info('No user')
 
@@ -817,7 +873,7 @@ class Trakt:
         return self._make_items_request(
             url='https://api.trakt.tv/movies/boxoffice',
             object_name='movies',
-            type_name='anticipated',
+            type_name='boxoffice',
             limit=limit,
         )
 
@@ -897,3 +953,26 @@ class Trakt:
             genres=genres,
             runtimes=runtimes,
         )
+
+    def _get_user_from_headers(self, payload):
+        """Extract user from the current authentication context"""
+        # In most cases, we'll use the first authenticated user
+        return self._get_first_authenticated_user()
+
+    def _attempt_token_refresh(self, user):
+        """Attempt to refresh the token for a user"""
+        try:
+            if user and user in self.cfg.trakt and 'refresh_token' in self.cfg.trakt[user]:
+                token_info = self.cfg.trakt[user]
+                log.info("Attempting to refresh token for user: %s", user)
+                success = self.__oauth_refresh_access_token(token_info['refresh_token'])
+                if success:
+                    log.info("Token refresh successful for user: %s", user)
+                    return True
+                else:
+                    log.error("Token refresh failed for user: %s", user)
+            else:
+                log.error("No refresh token available for user: %s", user)
+        except Exception:
+            log.exception("Exception during token refresh for user: %s", user)
+        return False

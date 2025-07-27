@@ -1,6 +1,7 @@
 from misc.log import logger
 
 from .apprise import Apprise
+from .discord import Discord
 from .pushover import Pushover
 from .slack import Slack
 
@@ -8,6 +9,7 @@ log = logger.get_logger(__name__)
 
 SERVICES = {
     'apprise': Apprise,
+    'discord': Discord,
     'pushover': Pushover,
     'slack': Slack
 }

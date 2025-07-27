@@ -137,7 +137,7 @@ def get_exclusions(pvr, pvr_type):
     return objects_list
 
 
-def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_roles, authenticate_user, years, countries, languages, genres, runtimes):
+def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_roles, authenticate_user, years, countries, languages, genres, runtimes, limit=None):
     """
     Get the appropriate Trakt list based on media type and list type.
     
@@ -153,6 +153,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
         languages: Language filter
         genres: Genre filter
         runtimes: Runtime filter (movies only)
+        limit: Maximum number of items to fetch
     
     Returns:
         List of Trakt objects or None if failed
@@ -162,6 +163,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
     if media_type == 'shows':
         if list_type.lower() == 'anticipated':
             return trakt.get_anticipated_shows(
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -169,6 +171,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
             )
         elif list_type.lower() == 'trending':
             return trakt.get_trending_shows(
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -176,6 +179,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
             )
         elif list_type.lower() == 'popular':
             return trakt.get_popular_shows(
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -187,6 +191,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
                 return None
             return trakt.get_person_shows(
                 person=person,
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -196,6 +201,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
         elif list_type.lower() == 'recommended':
             return trakt.get_recommended_shows(
                 authenticate_user,
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -204,6 +210,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
         elif list_type.lower().startswith('played'):
             most_type = misc_helper.substring_after(list_type.lower(), "_")
             return trakt.get_most_played_shows(
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -213,6 +220,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
         elif list_type.lower().startswith('watched'):
             most_type = misc_helper.substring_after(list_type.lower(), "_")
             return trakt.get_most_watched_shows(
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -220,13 +228,14 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
                 most_type=most_type if most_type else None,
             )
         elif list_type.lower() == 'watchlist':
-            return trakt.get_watchlist_shows(authenticate_user)
+            return trakt.get_watchlist_shows(authenticate_user, limit=limit)
         else:
-            return trakt.get_user_list_shows(list_type, authenticate_user)
+            return trakt.get_user_list_shows(list_type, authenticate_user, limit=limit)
     
     elif media_type == 'movies':
         if list_type.lower() == 'anticipated':
             return trakt.get_anticipated_movies(
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -235,6 +244,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
             )
         elif list_type.lower() == 'trending':
             return trakt.get_trending_movies(
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -243,6 +253,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
             )
         elif list_type.lower() == 'popular':
             return trakt.get_popular_movies(
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -250,7 +261,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
                 runtimes=runtimes,
             )
         elif list_type.lower() == 'boxoffice':
-            return trakt.get_boxoffice_movies()
+            return trakt.get_boxoffice_movies(limit=limit)
         elif list_type.lower() == 'person':
             if not person:
                 log.error("Person argument required when using person list type.")
@@ -258,6 +269,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
             return trakt.get_person_movies(
                 years=years,
                 person=person,
+                limit=limit,
                 countries=countries,
                 languages=languages,
                 genres=genres,
@@ -267,6 +279,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
         elif list_type.lower() == 'recommended':
             return trakt.get_recommended_movies(
                 authenticate_user,
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -276,6 +289,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
         elif list_type.lower().startswith('played'):
             most_type = misc_helper.substring_after(list_type.lower(), "_")
             return trakt.get_most_played_movies(
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -286,6 +300,7 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
         elif list_type.lower().startswith('watched'):
             most_type = misc_helper.substring_after(list_type.lower(), "_")
             return trakt.get_most_watched_movies(
+                limit=limit,
                 years=years,
                 countries=countries,
                 languages=languages,
@@ -294,9 +309,9 @@ def _get_trakt_list(trakt, media_type, list_type, person, include_non_acting_rol
                 most_type=most_type if most_type else None,
             )
         elif list_type.lower() == 'watchlist':
-            return trakt.get_watchlist_movies(authenticate_user)
+            return trakt.get_watchlist_movies(authenticate_user, limit=limit)
         else:
-            return trakt.get_user_list_movies(list_type, authenticate_user)
+            return trakt.get_user_list_movies(list_type, authenticate_user, limit=limit)
     
     return None
 
@@ -482,24 +497,51 @@ def _process_media(
     else:
         pvr_exclusions_list = None
 
-    # Get trakt list
-    trakt_objects_list = _get_trakt_list(
-        trakt, media_type, list_type, person, include_non_acting_roles, 
-        authenticate_user, years, countries, languages, genres, runtimes
-    )
+    # Get trakt list with adaptive fetching to account for existing items
+    initial_fetch_multiplier = 3  # Fetch 3x the limit initially to account for existing items
+    max_fetch_attempts = 3  # Maximum attempts to fetch more items
+    
+    trakt_objects_list = []
+    fetch_attempt = 0
+    current_limit = add_limit * initial_fetch_multiplier if add_limit > 0 else 500  # Default to 500 if no limit
+    
+    while fetch_attempt < max_fetch_attempts:
+        fetch_attempt += 1
+        log.info("Fetch attempt %d: Requesting %d items from Trakt", fetch_attempt, current_limit)
+        
+        # Fetch from Trakt with current limit
+        temp_list = _get_trakt_list(
+            trakt, media_type, list_type, person, include_non_acting_roles, 
+            authenticate_user, years, countries, languages, genres, runtimes,
+            limit=current_limit  # Pass the limit to the fetch function
+        )
 
-    if not trakt_objects_list:
-        log.error("Aborting due to failure to retrieve Trakt '%s' %s list.", list_type.capitalize(), media_plural)
-        if notifications:
-            callback_notify({
-                'event': 'abort', 
-                'type': media_plural, 
-                'list_type': list_type,
-                'reason': f"Failure to retrieve Trakt '{list_type.capitalize()}' {media_plural} list."
-            })
-        return None
-    else:
+        if not temp_list:
+            log.error("Aborting due to failure to retrieve Trakt '%s' %s list.", list_type.capitalize(), media_plural)
+            if notifications:
+                callback_notify({
+                    'event': 'abort', 
+                    'type': media_plural, 
+                    'list_type': list_type,
+                    'reason': f"Failure to retrieve Trakt '{list_type.capitalize()}' {media_plural} list."
+                })
+            return None
+        
+        trakt_objects_list = temp_list
         log.info("Retrieved Trakt '%s' %s list, %s found: %d", list_type.capitalize(), media_plural, media_plural, len(trakt_objects_list))
+        
+        # If we have no limit, or we got enough items, or this is the last attempt, proceed
+        if add_limit <= 0 or len(trakt_objects_list) >= add_limit * 2 or fetch_attempt >= max_fetch_attempts:
+            break
+            
+        # If we got fewer items than expected and there might be more, try fetching more
+        if len(trakt_objects_list) < current_limit:
+            # Trakt returned fewer items than requested, probably hit the end of the list
+            break
+        
+        # Double the limit for next attempt, but cap it reasonably
+        current_limit = min(current_limit * 2, 1000)
+        log.info("Not enough items fetched (%d), trying again with limit %d", len(trakt_objects_list), current_limit)
 
     # Set remove_rejected_recommended to False if this is not the recommended list
     if list_type.lower() != 'recommended':
@@ -543,6 +585,58 @@ def _process_media(
         else:
             log.info("Removed existing %s %s from Trakt %s list. %s left to process: %d", 
                     pvr_name, media_plural, media_plural, media_plural.capitalize(), len(processed_list))
+        
+        # Check if we need more items after filtering
+        if add_limit > 0 and len(processed_list) < add_limit and fetch_attempt < max_fetch_attempts:
+            # We have fewer items than requested after filtering
+            # For lists like boxoffice that have limited items, we need different logic
+            limited_lists = ['boxoffice']
+            is_limited_list = any(list_type.lower().startswith(limited) for limited in limited_lists)
+            
+            if is_limited_list:
+                # For limited lists like boxoffice, if we got fewer than requested and filtered them all out,
+                # there's likely no point in fetching more as these lists are small and fixed
+                log.info("List '%s' appears to be a limited list with few items. Cannot fetch more than %d items.", 
+                        list_type, len(trakt_objects_list))
+            elif len(trakt_objects_list) >= current_limit * 0.8:
+                # We got a reasonable amount of the requested items, so there might be more available
+                # Try fetching more items from Trakt
+                additional_needed = (add_limit - len(processed_list)) * 2  # Fetch 2x what we need
+                if additional_needed > 0:
+                    log.info("Only %d items remain after filtering, but %d requested. Attempting to fetch %d more items.", 
+                            len(processed_list), add_limit, additional_needed)
+                    
+                    additional_list = _get_trakt_list(
+                        trakt, media_type, list_type, person, include_non_acting_roles,
+                        authenticate_user, years, countries, languages, genres, runtimes,
+                        limit=current_limit + additional_needed
+                    )
+                    
+                    if additional_list and len(additional_list) > len(trakt_objects_list):
+                        # We got more items, reprocess the filtering
+                        log.info("Fetched %d total items on second attempt, reprocessing...", len(additional_list))
+                        
+                        if media_type == 'shows':
+                            processed_list = pvr_helper.remove_existing_series_from_trakt_list(
+                                pvr_objects_list,
+                                additional_list,
+                                callback_remove_recommended if remove_rejected_from_recommended else None
+                            )
+                        else:
+                            processed_list, removal_successful = pvr_helper.remove_existing_and_excluded_movies_from_trakt_list(
+                                pvr_objects_list,
+                                pvr_exclusions_list,
+                                additional_list,
+                                callback_remove_recommended if remove_rejected_from_recommended else None
+                            )
+                        
+                        if processed_list:
+                            log.info("After refetching and filtering: %d items available to process", len(processed_list))
+                    else:
+                        log.info("No additional items found or same number returned. List may be exhausted.")
+            else:
+                log.info("Got fewer items than expected (%d/%d), list may be exhausted or have limited content.", 
+                        len(trakt_objects_list), current_limit)
 
     # Sort filtered list
     if sort == 'release':

@@ -3,6 +3,12 @@
     "debug": false
   },
   "notifications": {
+    "discord": {
+      "service": "discord",
+      "webhook_url": "",
+      "username": "Traktarr",
+      "avatar_url": ""
+    },
     "verbose": false
   },
   "automatic": {

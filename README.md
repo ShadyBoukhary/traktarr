@@ -35,6 +35,7 @@
   - [Notifications](#notifications)
     - [General](#general)
     - [Apprise](#apprise)
+    - [Discord](#discord)
     - [Pushover](#pushover)
     - [Slack](#slack)
   - [Radarr](#radarr)
@@ -557,7 +558,7 @@ Private lists can be added in two ways:
    },
    ```
 
-2. If there are multiple authenticated users you want to fetch the lists from, you'll need to specify the username under `authenticate_as`.
+2. If there are multiple authenticated users you want to fetch the lists from, you'll need to specify the username under `authenticate_user`.
 
    _Note: The user should have access to the list (either own the list or a list that was shared to them by a friend)._
 
@@ -566,7 +567,7 @@ Private lists can be added in two ways:
      "movies": {
        "lists": {
            "https://trakt.tv/users/user/lists/my-private-movies-list": {
-               "authenticate_as": "user2",
+               "authenticate_user": "user2",
                "limit": 10
            }
        }
@@ -574,7 +575,7 @@ Private lists can be added in two ways:
      "shows": {
        "lists": {
            "https://trakt.tv/users/user/lists/my-private-shows-list": {
-               "authenticate_as": "user2",
+               "authenticate_user": "user2",
                "limit": 10
            }
        }
@@ -874,6 +875,7 @@ For manual (i.e. CLI) commands, you need to add the  `--notifications` flag.
 
 Supported `services`:
  - `apprise`
+ - `discord`
  - `pushover`
  - `slack`
 
@@ -925,6 +927,39 @@ _Note: The key name can be anything, but the `service` key must be must be the e
  - Optional.
 
  - Default is `Traktarr`.
+
+
+### Discord
+
+```json
+"notifications": {
+  "discord": {
+    "service": "discord",
+    "webhook_url": "",
+    "username": "Traktarr",
+    "avatar_url": ""
+  },
+  "verbose": false
+},
+```
+
+`webhook_url` - Discord Webhook URL from your Discord server.
+
+ - Required.
+ 
+ - To create a webhook: Server Settings → Integrations → Webhooks → New Webhook
+
+`username` - Username that will appear as the sender in Discord.
+
+ - Optional.
+
+ - Default is `Traktarr`.
+
+`avatar_url` - URL to an image to use as the avatar for messages.
+
+ - Optional.
+
+ - If not provided, Discord will use the default webhook avatar.
 
 
 ### Pushover
