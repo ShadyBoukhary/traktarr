@@ -319,28 +319,42 @@ class Trakt:
 
     def __oauth_process_token_request(self, req):
         success = False
+        
+        log.debug("Token request status: %d", req.status_code)
+        log.debug("Token request response: %s", req.text[:200])
 
         if req.status_code == 200:
             # Success; saving the access token
             access_token_response = req.json()
             access_token = access_token_response['access_token']
+            
+            log.info("Successfully received access token, getting user info...")
 
             # But first we need to find out what user this token belongs to
             temp_headers = self._headers_without_authentication()
             temp_headers['Authorization'] = 'Bearer ' + access_token
 
-            req = requests.get('https://api.trakt.tv/users/me', headers=temp_headers)
+            user_req = requests.get('https://api.trakt.tv/users/me', headers=temp_headers)
+            log.debug("User info request status: %d", user_req.status_code)
+            
+            if user_req.status_code == 200:
+                username = user_req.json()['username']
+                log.info("Token belongs to user: %s", username)
 
-            from misc.config import Config
-            new_config = Config()
+                from misc.config import Config
+                new_config = Config()
 
-            new_config.merge_settings({
-                "trakt": {
-                    req.json()['username']: access_token_response
-                }
-            })
+                new_config.merge_settings({
+                    "trakt": {
+                        username: access_token_response
+                    }
+                })
+                
+                log.info("Token saved successfully for user: %s", username)
+                success = True
+            else:
+                log.error("Failed to get user info: %d", user_req.status_code)
 
-            success = True
         elif req.status_code == 404:
             log.debug('The device code was wrong')
             log.error('Whoops, something went wrong; aborting the authentication process')
@@ -376,7 +390,7 @@ class Trakt:
             success, status_code = self.__oauth_process_token_request(req)
 
             if success:
-                break
+                return True
             elif status_code == 426:
                 log.debug('Increasing the interval by one second')
                 polling_interval += 1
@@ -465,7 +479,6 @@ class Trakt:
 
     def _headers_without_authentication(self):
         return {
-            'Content-Type': 'application/json',
             'trakt-api-version': '2',
             'trakt-api-key': self.cfg.trakt.client_id
         }
